@@ -156,13 +156,17 @@ class Generator(nn.Module):
         self.upsamples = nn.ModuleList([])
         self.encoder_layers = nn.ModuleList([])
         self.decoder_layers = nn.ModuleList([])
-        self.content_conv = nn.Conv1d(d_con, channels[-1], 1, 1, 0)
-
+        self.content_convs = nn.ModuleList([])
+        
+        rate_total = 1
         for l, c, c_next, r, in zip(layers, channels, channels[1:]+[channels[-1]], downsample_rate):
+            rate_total = rate_total * r
             self.downsamples.append(nn.Conv1d(c, c_next, r * 2, r, r // 2))
             self.upsamples.insert(0, nn.ConvTranspose1d(c_next, c, r* 2, r, r // 2))
             self.encoder_layers.append(GeneratorResStack(c, l))
             self.decoder_layers.insert(0, GeneratorResStack(c, l))
+            self.content_convs.insert(0,
+                            nn.Conv1d(d_con, c_next, 1, 1, 0))
 
     def forward(self, x, time, condition):
         # padding
@@ -176,11 +180,11 @@ class Generator(nn.Module):
         x = self.input_conv(x)
         skips = []
         for layer, ds in zip(self.encoder_layers, self.downsamples):
-            x = layer(x, time, spk)
             skips.append(x)
+            x = layer(x, time, spk)
             x = ds(x)
-        x = x * self.content_conv(con)
-        for layer, us, s in zip(self.decoder_layers, self.upsamples, reversed(skips)):
+        for layer, us, s, c in zip(self.decoder_layers, self.upsamples, reversed(skips), self.content_convs):
+            x = x * c(F.interpolate(con, size=x.shape[2]))
             x = us(x)
             x = layer(x, time, spk)
             x = x + s
