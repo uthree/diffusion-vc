@@ -120,18 +120,19 @@ class GeneratorResBlock(nn.Module):
         super().__init__()
         self.time_enc = TimeEncoding1d(channels)
         self.spk = nn.Conv1d(d_spk, channels, 1, 1, 0)
-        self.conv1 = nn.Conv1d(channels, channels, 5, 1, 2)
-        self.conv2 = nn.Conv1d(channels, channels, 5, 1, 2)
+        self.conv1 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=1)
+        self.conv2 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=2)
+        self.conv3 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=3)
         self.act = nn.GELU()
 
     def forward(self, x, t, spk):
         res = x
         x = self.time_enc(x, t)
         x = x * self.spk(spk)
-        x = self.conv1(x)
-        x = self.act(x)
-        x = self.conv2(x)
-        return x + res
+        o1 = self.act(self.conv1(x))
+        o2 = self.act(self.conv2(x))
+        o3 = self.act(self.conv3(x))
+        return o1 + o2 + o3 + res
 
 
 class GeneratorResStack(nn.Module):
@@ -147,7 +148,7 @@ class GeneratorResStack(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, d_con=4, layers=[4, 4, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[8, 4, 4, 2]):
+    def __init__(self, d_con=4, layers=[2, 2, 3, 3], channels=[32, 64, 128, 256], downsample_rate=[4, 4, 4, 4]):
         super().__init__()
         self.input_conv = nn.Conv1d(1, channels[0], 7, 1, 3)
         self.output_conv = nn.Conv1d(channels[0], 1, 7, 1, 3)
@@ -178,7 +179,7 @@ class Generator(nn.Module):
             x = layer(x, time, spk)
             skips.append(x)
             x = ds(x)
-        x = x + self.content_conv(con)
+        x = x * self.content_conv(con)
         for layer, us, s in zip(self.decoder_layers, self.upsamples, reversed(skips)):
             x = us(x)
             x = layer(x, time, spk)
@@ -188,11 +189,9 @@ class Generator(nn.Module):
         x = x.squeeze(1)
         return x
 
-
 class DiffusionVC(nn.Module):
     def __init__(self):
         super().__init__()
         self.content_encoder = ContentEncoder()
         self.speaker_encoder = SpeakerEncoder()
         self.generator = DDPM(Generator())
-
