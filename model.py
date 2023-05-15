@@ -74,7 +74,8 @@ class GeneratorResBlock(nn.Module):
     def __init__(self, channels, condition_channels=256):
         super().__init__()
         self.time_enc = TimeEncoding1d(channels)
-        self.spec_conv = nn.Conv1d(condition_channels, channels, 1, 1, 0)
+        self.spec_conv1 = nn.Conv1d(condition_channels, channels, 1, 1, 0)
+        self.spec_conv2 = nn.Conv1d(condition_channels, channels, 1, 1, 0)
         self.conv = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=1)
         self.norm = ChannelNorm(channels)
         self.act = nn.GELU()
@@ -83,7 +84,8 @@ class GeneratorResBlock(nn.Module):
         res = x
         x = self.norm(x)
         x = self.time_enc(x, t)
-        x = x * F.interpolate(self.spec_conv(spec), x.shape[2])
+        x = x * F.interpolate(self.spec_conv1(spec), x.shape[2]) +\
+                F.interpolate(self.spec_conv2(spec), x.shape[2])
         x = self.act(self.conv(x))
         return x + res
 
@@ -101,7 +103,7 @@ class GeneratorResStack(nn.Module):
 
 
 class Vocoder(nn.Module):
-    def __init__(self, layers=[4, 4, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[4, 4, 4, 4]):
+    def __init__(self, layers=[2, 3, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[2, 2, 8, 8]):
         super().__init__()
         self.input_conv = nn.Conv1d(1, channels[0], 7, 1, 3)
         self.output_conv = nn.Conv1d(channels[0], 1, 7, 1, 3)

@@ -31,12 +31,12 @@ device = torch.device(args.device)
 
 def load_or_init_model(device=torch.device('cpu')):
     model = DiffusionVocoder().to(device)
-    if os.path.exists('./model.pt'):
-        model.load_state_dict(torch.load('./model.pt', map_location=device))
+    if os.path.exists('./vocoder.pt'):
+        model.load_state_dict(torch.load('./vocoder.pt', map_location=device))
     return model
 
 def save_model(model):
-    torch.save(model.state_dict(), './model.pt')
+    torch.save(model.state_dict(), './vocoder.pt')
 
 scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
 

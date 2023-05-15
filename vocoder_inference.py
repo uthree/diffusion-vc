@@ -26,9 +26,9 @@ device = torch.device(args.device)
 
 model = DiffusionVocoder().to(device)
 
-if os.path.exists('./model.pt'):
+if os.path.exists('./vocoder.pt'):
     print("Loading Model...")
-    model.load_state_dict(torch.load('./model.pt', map_location=device))
+    model.load_state_dict(torch.load('./vocoder.pt', map_location=device))
 
 if not os.path.exists("./outputs/"):
     os.mkdir("outputs")
