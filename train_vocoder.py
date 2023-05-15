@@ -9,7 +9,7 @@ import torchaudio
 
 from tqdm import tqdm
 
-from model import DiffusionVC, Condition
+from model import DiffusionVocoder
 from dataset import WaveFileDirectory
 
 
@@ -30,7 +30,7 @@ args = parser.parse_args()
 device = torch.device(args.device)
 
 def load_or_init_model(device=torch.device('cpu')):
-    model = DiffusionVC().to(device)
+    model = DiffusionVocoder().to(device)
     if os.path.exists('./model.pt'):
         model.load_state_dict(torch.load('./model.pt', map_location=device))
     return model
@@ -41,11 +41,8 @@ def save_model(model):
 scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
 
 model = load_or_init_model(device=device)
-Ec = model.content_encoder
-Es = model.speaker_encoder
-G = model.generator
 
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 
 ds = WaveFileDirectory(
         [args.dataset],
@@ -56,7 +53,12 @@ ds = WaveFileDirectory(
 dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size*2, shuffle=True)
 
 grad_acc = args.gradient_accumulation
-weight_kl = 0.02
+
+to_mel = torchaudio.transforms.MelSpectrogram(
+        n_fft=2048,
+        n_mels=256,
+        normalized=True,
+        ).to(device)
 
 
 for epoch in range(args.epoch):
@@ -70,20 +72,16 @@ for epoch in range(args.epoch):
         if batch % grad_acc == 0:
             optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=args.fp16):
-            mean, logvar = Es(wave)
-            speaker = mean + torch.randn(logvar.shape, device=device) * torch.exp(logvar)
-            loss_kl = (-1 - logvar + torch.exp(logvar) + mean ** 2).mean()
-            content = Ec(wave)
-            condition = Condition(content, speaker)
-            ddpm_loss = G.calculate_loss(wave, condition)
-            loss = ddpm_loss + loss_kl * weight_kl
+            spec = model.to_spectrogram(wave)
+            spec = model.spectrogram_encoder(spec)
+            loss = model.vocoder.calculate_loss(wave, spec)
 
         scaler.scale(loss).backward()
         if batch % grad_acc == 0:
             scaler.step(optimizer)
             scaler.update()
         
-        bar.set_description(f"L1: {ddpm_loss.item():.6f}, KL: {loss_kl.item():.6f}")
+        bar.set_description(f"loss: {loss.item():.6f}")
         bar.update(N)
         
         if batch % 300 == 0:

@@ -8,7 +8,37 @@ import torchaudio
 from ddpm import DDPM
 
 
-# Channel Normalization
+class ResBlock(nn.Module):
+    def __init__(self, channels=256, spectral_norm=True, alpha=0.01, dropout=0, groups=1):
+        super().__init__()
+        self.c1 = nn.Conv1d(channels, channels, 5, 1, 2, groups=groups)
+        self.act = nn.LeakyReLU(alpha)
+        self.c2 = nn.Conv1d(channels, channels, 5, 1, 2, groups=groups)
+        self.dropout_rate = dropout
+        if spectral_norm:
+            self.c1 = torch.nn.utils.spectral_norm(self.c1)
+            self.c2 = torch.nn.utils.spectral_norm(self.c2)
+
+    def forward(self, x):
+        res = x
+        x = self.act(self.c1(x))
+        x = F.dropout(x, p=self.dropout_rate)
+        x = self.c2(x)
+        x = F.dropout(x, p=self.dropout_rate)
+        return x + res
+
+
+class SpectrogramEncoder(nn.Module):
+    def __init__(self, n_fft=256, num_layers=4):
+        super().__init__()
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
+        self.mid_layers = nn.Sequential(
+                *[ResBlock(256, False) for _ in range(num_layers)])
+
+    def forward(self, x):
+        return self.mid_layers(self.input_layer(x))
+
+
 class ChannelNorm(nn.Module):
     def __init__(self, channels, eps=1e-4):
         super().__init__()
@@ -17,43 +47,6 @@ class ChannelNorm(nn.Module):
     def forward(self, x):
         x = (x - x.mean(dim=1, keepdim=True)) / torch.sqrt(x.var(dim=1, keepdim=True) + self.eps)
         return x
-
-
-class SpeakerEncoder(nn.Module):
-    def __init__(self, d_spk=256):
-        super().__init__()
-        self.to_mel = torchaudio.transforms.MelSpectrogram(
-                n_fft=512,
-                n_mels=80,
-                )
-        self.layers = nn.Sequential(
-                nn.Conv1d(80, 64, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(64, 64, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(64, 128, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(128, 128, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(128, 128, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(128, 256, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(256, 256, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(256, 256, 4, 1, 2),
-                nn.GELU()
-                )
-        self.output_layer = nn.Conv1d(256, d_spk*2, 1, 1, 0)
-    
-    def forward(self, x):
-        x = self.to_mel(x)
-        x = self.layers(x)
-        # Spatial mean
-        x = x.mean(dim=2, keepdim=True)
-        x = self.output_layer(x)
-        mean, logvar = torch.chunk(x, 2, dim=1)
-        return mean, logvar
 
 
 class TimeEncoding1d(nn.Module):
@@ -77,89 +70,38 @@ class TimeEncoding1d(nn.Module):
         return ret
 
 
-class ResBlock(nn.Module):
-    def __init__(self, channels):
-        super().__init__()
-        self.conv1 = nn.Conv1d(channels, channels, 5, 1, 2)
-        self.conv2 = nn.Conv1d(channels, channels, 5, 1, 2)
-        self.norm = ChannelNorm(channels)
-        self.act = nn.GELU()
-
-    def forward(self, x):
-        return self.conv2(self.act(self.conv1(self.norm(x)))) + x
-
-
-class ResStack(nn.Module):
-    def __init__(self, channels, num_layers=2):
-        super().__init__()
-        self.layers = nn.Sequential(*[ResBlock(channels) for _ in range(num_layers)])
-
-    def forward(self, x):
-        return self.layers(x)
-
-
-class ContentEncoder(nn.Module):
-    def __init__(self, d_con=4):
-        super().__init__()
-        self.to_mel = torchaudio.transforms.MelSpectrogram(
-                n_fft=512,
-                n_mels=80,
-                )
-        self.layers = nn.Sequential(
-                nn.Conv1d(80, 256, 8, 4, 2),
-                ResStack(256, num_layers=8),
-                nn.Conv1d(256, d_con, 5, 1, 2)
-                )
-
-
-    def forward(self, x):
-        # padding
-        if x.shape[1] % 256 != 0:
-            pad_len = (256 - x.shape[1] % 256)
-            x = torch.cat([x, torch.zeros(x.shape[0], pad_len, device=x.device)], dim=1)
-        x = self.to_mel(x)
-        x = self.layers(x)
-        return x
-
-
-class Condition:
-    def __init__(self, content, speaker):
-        self.content = content
-        self.speaker = speaker
-
-
 class GeneratorResBlock(nn.Module):
-    def __init__(self, channels, d_con=4, d_spk=256):
+    def __init__(self, channels, condition_channels=256):
         super().__init__()
         self.time_enc = TimeEncoding1d(channels)
-        self.spk = nn.Conv1d(d_spk, channels, 1, 1, 0)
+        self.spec_conv = nn.Conv1d(condition_channels, channels, 1, 1, 0)
         self.conv = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=1)
         self.norm = ChannelNorm(channels)
         self.act = nn.GELU()
 
-    def forward(self, x, t, spk):
+    def forward(self, x, t, spec):
         res = x
         x = self.norm(x)
         x = self.time_enc(x, t)
-        x = x * self.spk(spk)
+        x = x * F.interpolate(self.spec_conv(spec), x.shape[2])
         x = self.act(self.conv(x))
         return x + res
 
 
 class GeneratorResStack(nn.Module):
-    def __init__(self, channels, d_con=4, d_spk=256, num_layers=4):
+    def __init__(self, channels, num_layers=4):
         super().__init__()
         self.layers = nn.ModuleList(
-                [GeneratorResBlock(channels, d_con, d_spk) for _ in range(num_layers)])
+                [GeneratorResBlock(channels) for _ in range(num_layers)])
 
-    def forward(self, x, t, spk):
+    def forward(self, x, t, spec):
         for layer in self.layers:
-            x = layer(x, t, spk)
+            x = layer(x, t, spec)
         return x
 
 
-class Generator(nn.Module):
-    def __init__(self, d_con=4, layers=[4, 4, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[4, 4, 4, 4]):
+class Vocoder(nn.Module):
+    def __init__(self, layers=[4, 4, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[4, 4, 4, 4]):
         super().__init__()
         self.input_conv = nn.Conv1d(1, channels[0], 7, 1, 3)
         self.output_conv = nn.Conv1d(channels[0], 1, 7, 1, 3)
@@ -167,17 +109,14 @@ class Generator(nn.Module):
         self.upsamples = nn.ModuleList([])
         self.encoder_layers = nn.ModuleList([])
         self.decoder_layers = nn.ModuleList([])
-        self.content_convs = nn.ModuleList([])
         
         rate_total = 1
         for l, c, c_next, r, in zip(layers, channels, channels[1:]+[channels[-1]], downsample_rate):
             rate_total = rate_total * r
             self.downsamples.append(nn.Conv1d(c, c_next, r * 2, r, r // 2))
             self.upsamples.insert(0, nn.ConvTranspose1d(c_next, c, r* 2, r, r // 2))
-            self.encoder_layers.append(GeneratorResStack(c, l))
-            self.decoder_layers.insert(0, GeneratorResStack(c, l))
-            self.content_convs.insert(0,
-                            nn.Conv1d(d_con, c_next, 1, 1, 0))
+            self.encoder_layers.append(GeneratorResStack(c, num_layers=l))
+            self.decoder_layers.insert(0, GeneratorResStack(c, num_layers=l))
 
     def forward(self, x, time, condition):
         # padding
@@ -185,28 +124,28 @@ class Generator(nn.Module):
             pad_len = (256 - x.shape[1] % 256)
             x = torch.cat([x, torch.zeros(x.shape[0], pad_len, device=x.device)], dim=1)
 
-        spk = condition.speaker
-        con = condition.content
         x = x.unsqueeze(1)
         x = self.input_conv(x)
         skips = []
         for layer, ds in zip(self.encoder_layers, self.downsamples):
             skips.append(x)
-            x = layer(x, time, spk)
+            x = layer(x, time, condition)
             x = ds(x)
-        for layer, us, s, c in zip(self.decoder_layers, self.upsamples, reversed(skips), self.content_convs):
-            x = x * c(F.interpolate(con, size=x.shape[2]))
+        for layer, us, s in zip(self.decoder_layers, self.upsamples, reversed(skips)):
             x = us(x)
-            x = layer(x, time, spk)
+            x = layer(x, time, condition)
             x = x + s
 
         x = self.output_conv(x)
         x = x.squeeze(1)
         return x
 
-class DiffusionVC(nn.Module):
+
+class DiffusionVocoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.content_encoder = ContentEncoder()
-        self.speaker_encoder = SpeakerEncoder()
-        self.generator = DDPM(Generator())
+        self.vocoder = DDPM(Vocoder())
+        self.spectrogram_encoder = SpectrogramEncoder()
+        self.to_spectrogram = torchaudio.transforms.Spectrogram(
+                n_fft=256
+                )
