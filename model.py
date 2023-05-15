@@ -2,6 +2,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchaudio
 
 from ddpm import DDPM
@@ -177,7 +178,7 @@ class Generator(nn.Module):
             x = layer(x, time, spk)
             skips.append(x)
             x = ds(x)
-        x = x * self.content_conv(con)
+        x = x + self.content_conv(con)
         for layer, us, s in zip(self.decoder_layers, self.upsamples, reversed(skips)):
             x = us(x)
             x = layer(x, time, spk)

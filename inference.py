@@ -45,9 +45,12 @@ for i, path in enumerate(paths):
     with torch.no_grad():
         with torch.cuda.amp.autocast(enabled=args.fp16):
             wf = wf.to(device)
+            wf = resample(wf, sr, 22050)
             content = model.content_encoder(wf)
             condition = Condition(content, target_speaker)
             length = wf.shape[1] + (256 - wf.shape[1] % 256)
             wf = model.generator.sample(x_shape=(1, length), condition=condition, show_progress=True, num_steps=args.steps)
+            wf = resample(wf, 22050, sr)
+
     wf = wf.to('cpu').detach()
     torchaudio.save(src=wf, sample_rate=sr, filepath=f"./outputs/out_{i}.wav")
