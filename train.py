@@ -45,6 +45,7 @@ model = load_or_init_model(device=device)
 Ec = model.content_encoder
 Es = model.speaker_encoder
 G = model.generator
+
 optimizer = Lion(model.parameters(), lr=1e-4)
 
 ds = WaveFileDirectory(
@@ -55,6 +56,8 @@ ds = WaveFileDirectory(
 
 dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size*2, shuffle=True)
 
+grad_acc = args.gradient_accumulation
+
 
 for epoch in range(args.epoch):
     tqdm.write(f"Epoch #{epoch}")
@@ -64,18 +67,20 @@ for epoch in range(args.epoch):
         N = wave.shape[0]
         wave = wave.to(device)
         
-        optimizer.zero_grad()
+        if batch % grad_acc == 0:
+            optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=args.fp16):
             speaker = Es(wave)
             content = Ec(wave)
             condition = Condition(content, speaker)
             loss = G.calculate_loss(wave, condition)
-
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
         
-        bar.set_description(f"Loss: {loss.item():.4f}")
+        if batch % grad_acc == 0:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        
+        bar.set_description(f"Loss: {loss.item():.6f}")
         bar.update(N)
         
         if batch % 100 == 0:
