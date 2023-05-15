@@ -45,7 +45,7 @@ Ec = model.content_encoder
 Es = model.speaker_encoder
 G = model.generator
 
-optimizer = optim.AdamW(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 ds = WaveFileDirectory(
         [args.dataset],
@@ -82,6 +82,7 @@ for epoch in range(args.epoch):
         bar.set_description(f"Loss: {loss.item():.6f}")
         bar.update(N)
         
-        if batch % 100 == 0:
+        if batch % 300 == 0:
             save_model(model)
+            tqdm.write("Saved model!")
 
