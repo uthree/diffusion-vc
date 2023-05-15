@@ -172,13 +172,16 @@ class Generator(nn.Module):
         con = condition.content
         x = x.unsqueeze(1)
         x = self.input_conv(x)
+        skips = []
         for layer, ds in zip(self.encoder_layers, self.downsamples):
             x = layer(x, time, spk)
+            skips.append(x)
             x = ds(x)
         x = x * self.content_conv(con)
-        for layer, us in zip(self.decoder_layers, self.upsamples):
+        for layer, us, s in zip(self.decoder_layers, self.upsamples, reversed(skips)):
             x = us(x)
             x = layer(x, time, spk)
+            x = x + s
 
         x = self.output_conv(x)
         x = x.squeeze(1)
