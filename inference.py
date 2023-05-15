@@ -17,6 +17,8 @@ parser.add_argument('-fp16', default=False, type=bool)
 parser.add_argument('-i', '--inputs', default='./inputs')
 parser.add_argument('-t', '--target-speaker', default='./speaker.wav')
 parser.add_argument('-s', '--steps', default=10, type=int)
+parser.add_argument('-ig', '--input-gain', default=1.0, type=float)
+parser.add_argument('-g', '--gain', default=1.0, type=float)
 parser.add_argument('-eta', '--eta', default=0, type=float)
 
 args = parser.parse_args()
@@ -46,7 +48,7 @@ for i, path in enumerate(paths):
     with torch.no_grad():
         with torch.cuda.amp.autocast(enabled=args.fp16):
             wf = wf.to(device)
-            wf = resample(wf, sr, 22050)
+            wf = resample(wf, sr, 22050) * args.input_gain
             content = model.content_encoder(wf)
             condition = Condition(content, target_speaker)
             length = wf.shape[1] + (256 - wf.shape[1] % 256)
@@ -56,7 +58,7 @@ for i, path in enumerate(paths):
                     num_steps=args.steps,
                     eta = args.eta
                     )
-            wf = resample(wf, 22050, sr)
+            wf = resample(wf, 22050, sr) * args.gain
 
     wf = wf.to('cpu').detach()
     torchaudio.save(src=wf, sample_rate=sr, filepath=f"./outputs/out_{i}.wav")
