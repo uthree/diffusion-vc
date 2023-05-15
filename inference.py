@@ -17,6 +17,7 @@ parser.add_argument('-fp16', default=False, type=bool)
 parser.add_argument('-i', '--inputs', default='./inputs')
 parser.add_argument('-t', '--target-speaker', default='./speaker.wav')
 parser.add_argument('-s', '--steps', default=10, type=int)
+parser.add_argument('--encode-speaker-cpu', default=True, type=bool)
 
 args = parser.parse_args()
 
@@ -30,10 +31,15 @@ if os.path.exists('./model.pt'):
 
 target_wav, sr = torchaudio.load(args.target_speaker)
 target_wav = resample(target_wav, sr, 22050)
-target_wav = target_wav.to(device)
+if args.encode_speaker_cpu:
+    target_wav = target_wav.to(torch.device('cpu'))
+else:
+    target_wav = target_wav.to(device)
 
 print("Encoding target speaker...")
-target_speaker = model.speaker_encoder(target_wav)
+if args.encode_speaker_cpu:
+    model.speaker_encoder = model.speaker_encoder.to(torch.device('cpu'))
+target_speaker = model.speaker_encoder(target_wav).to(device)
 
 if not os.path.exists("./outputs/"):
     os.mkdir("outputs")
