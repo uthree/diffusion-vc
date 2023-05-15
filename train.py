@@ -73,9 +73,9 @@ for epoch in range(args.epoch):
             content = Ec(wave)
             condition = Condition(content, speaker)
             loss = G.calculate_loss(wave, condition)
-        
+
+        scaler.scale(loss).backward()
         if batch % grad_acc == 0:
-            scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         

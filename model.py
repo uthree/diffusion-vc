@@ -80,10 +80,11 @@ class ResBlock(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv1d(channels, channels, 5, 1, 2)
         self.conv2 = nn.Conv1d(channels, channels, 5, 1, 2)
+        self.norm = ChannelNorm(channels)
         self.act = nn.GELU()
 
     def forward(self, x):
-        return self.conv2(self.act(self.conv1(x))) + x
+        return self.conv2(self.act(self.conv1(self.norm(x)))) + x
 
 
 class ResStack(nn.Module):
@@ -104,7 +105,7 @@ class ContentEncoder(nn.Module):
                 )
         self.layers = nn.Sequential(
                 nn.Conv1d(80, 256, 8, 4, 2),
-                ResStack(256, num_layers=4),
+                ResStack(256, num_layers=8),
                 nn.Conv1d(256, d_con, 5, 1, 2)
                 )
 
@@ -133,10 +134,12 @@ class GeneratorResBlock(nn.Module):
         self.conv1 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=1)
         self.conv2 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=2)
         self.conv3 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=3)
+        self.norm = ChannelNorm(channels)
         self.act = nn.GELU()
 
     def forward(self, x, t, spk):
         res = x
+        x = self.norm(x)
         x = self.time_enc(x, t)
         x = x * self.spk(spk)
         o1 = self.act(self.conv1(x))

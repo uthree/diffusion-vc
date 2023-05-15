@@ -17,6 +17,7 @@ parser.add_argument('-fp16', default=False, type=bool)
 parser.add_argument('-i', '--inputs', default='./inputs')
 parser.add_argument('-t', '--target-speaker', default='./speaker.wav')
 parser.add_argument('-s', '--steps', default=10, type=int)
+parser.add_argument('-eta', '--eta', default=0, type=float)
 
 args = parser.parse_args()
 
@@ -49,7 +50,12 @@ for i, path in enumerate(paths):
             content = model.content_encoder(wf)
             condition = Condition(content, target_speaker)
             length = wf.shape[1] + (256 - wf.shape[1] % 256)
-            wf = model.generator.sample(x_shape=(1, length), condition=condition, show_progress=True, num_steps=args.steps)
+            wf = model.generator.sample(x_shape=(1, length),
+                    condition=condition,
+                    show_progress=True,
+                    num_steps=args.steps,
+                    eta = args.eta
+                    )
             wf = resample(wf, 22050, sr)
 
     wf = wf.to('cpu').detach()
