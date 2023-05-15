@@ -42,16 +42,18 @@ class SpeakerEncoder(nn.Module):
                 nn.Conv1d(256, 256, 4, 1, 2),
                 nn.GELU(),
                 nn.Conv1d(256, 256, 4, 1, 2),
-                nn.GELU(),
-                nn.Conv1d(256, d_spk, 4, 1, 2),
+                nn.GELU()
                 )
+        self.output_layer = nn.Conv1d(256, d_spk*2, 1, 1, 0)
     
     def forward(self, x):
         x = self.to_mel(x)
         x = self.layers(x)
         # Spatial mean
         x = x.mean(dim=2, keepdim=True)
-        return x
+        x = self.output_layer(x)
+        mean, logvar = torch.chunk(x, 2, dim=1)
+        return mean, logvar
 
 
 class TimeEncoding1d(nn.Module):

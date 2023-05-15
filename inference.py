@@ -36,7 +36,7 @@ target_wav = resample(target_wav, sr, 22050)
 target_wav = target_wav.to(device)
 
 print("Encoding target speaker...")
-target_speaker = model.speaker_encoder(target_wav).to(device)
+target_speaker, _ = model.speaker_encoder(target_wav)
 
 if not os.path.exists("./outputs/"):
     os.mkdir("outputs")

@@ -56,6 +56,7 @@ ds = WaveFileDirectory(
 dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size*2, shuffle=True)
 
 grad_acc = args.gradient_accumulation
+weight_kl = 0.02
 
 
 for epoch in range(args.epoch):
@@ -69,17 +70,20 @@ for epoch in range(args.epoch):
         if batch % grad_acc == 0:
             optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=args.fp16):
-            speaker = Es(wave)
+            mean, logvar = Es(wave)
+            speaker = mean + torch.randn(logvar.shape, device=device) * torch.exp(logvar)
+            loss_kl = (-1 - logvar + torch.exp(logvar) + mean ** 2).mean()
             content = Ec(wave)
             condition = Condition(content, speaker)
-            loss = G.calculate_loss(wave, condition)
+            ddpm_loss = G.calculate_loss(wave, condition)
+            loss = ddpm_loss + loss_kl * weight_kl
 
         scaler.scale(loss).backward()
         if batch % grad_acc == 0:
             scaler.step(optimizer)
             scaler.update()
         
-        bar.set_description(f"Loss: {loss.item():.6f}")
+        bar.set_description(f"L1: {ddpm_loss.item():.6f}, KL: {loss_kl.item():.6f}")
         bar.update(N)
         
         if batch % 300 == 0:
