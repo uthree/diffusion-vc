@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 from model import DiffusionVC, Condition
 from dataset import WaveFileDirectory
-from lion_pytorch import Lion
 
 
 parser = argparse.ArgumentParser(description="run training")
@@ -24,7 +23,7 @@ parser.add_argument('-lr', '--learning-rate', default=1e-4, type=float)
 parser.add_argument('-len', '--length', default=32768, type=int)
 parser.add_argument('-m', '--max-data', default=-1, type=int)
 parser.add_argument('-fp16', default=False, type=bool)
-parser.add_argument('-gacc', '--gradient-accumulation', default=1, type=int)
+parser.add_argument('-gacc', '--gradient-accumulation', default=4, type=int)
 
 args = parser.parse_args()
 
@@ -46,7 +45,7 @@ Ec = model.content_encoder
 Es = model.speaker_encoder
 G = model.generator
 
-optimizer = Lion(model.parameters(), lr=1e-4)
+optimizer = optim.AdamW(model.parameters(), lr=1e-4)
 
 ds = WaveFileDirectory(
         [args.dataset],
