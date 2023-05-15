@@ -133,9 +133,7 @@ class GeneratorResBlock(nn.Module):
         super().__init__()
         self.time_enc = TimeEncoding1d(channels)
         self.spk = nn.Conv1d(d_spk, channels, 1, 1, 0)
-        self.conv1 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=1)
-        self.conv2 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=2)
-        self.conv3 = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=3)
+        self.conv = nn.Conv1d(channels, channels, 7, 1, padding='same', dilation=1)
         self.norm = ChannelNorm(channels)
         self.act = nn.GELU()
 
@@ -144,10 +142,8 @@ class GeneratorResBlock(nn.Module):
         x = self.norm(x)
         x = self.time_enc(x, t)
         x = x * self.spk(spk)
-        o1 = self.act(self.conv1(x))
-        o2 = self.act(self.conv2(x))
-        o3 = self.act(self.conv3(x))
-        return o1 + o2 + o3 + res
+        x = self.act(self.conv(x))
+        return x + res
 
 
 class GeneratorResStack(nn.Module):
