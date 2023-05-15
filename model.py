@@ -76,7 +76,7 @@ class ResBlock(nn.Module):
 
 
 class ResStack(nn.Module):
-    def __init__(self, channels, num_layers):
+    def __init__(self, channels, num_layers=2):
         super().__init__()
         self.layers = nn.Sequential(*[ResBlock(channels) for _ in range(num_layers)])
 
@@ -87,14 +87,17 @@ class ResStack(nn.Module):
 class ContentEncoder(nn.Module):
     def __init__(self, d_con=4):
         super().__init__()
-        self.to_mel = torchaudio.transforms.MelSpectrogram(
-                n_fft=512,
-                n_mels=80
-                )
         self.layers = nn.Sequential(
-                nn.Conv1d(80, 128, 5, 1, 2),
-                ResStack(128, num_layers=6),
-                nn.Conv1d(128, d_con, 5, 1, 2)
+                nn.Conv1d(1, 32, 5, 1, 2),
+                ResStack(32),
+                nn.Conv1d(32, 64, 8, 4, 2),
+                ResStack(64),
+                nn.Conv1d(64, 128, 8, 4, 2),
+                ResStack(128),
+                nn.Conv1d(128, 256, 8, 4, 2),
+                ResStack(256),
+                nn.Conv1d(256, 256, 8, 4, 2),
+                nn.Conv1d(256, d_con, 5, 1, 2)
                 )
 
 
@@ -103,8 +106,7 @@ class ContentEncoder(nn.Module):
         if x.shape[1] % 256 != 0:
             pad_len = (256 - x.shape[1] % 256)
             x = torch.cat([x, torch.zeros(x.shape[0], pad_len, device=x.device)], dim=1)
-
-        x = self.to_mel(x)[:, :, 1:]
+        x = x.unsqueeze(1)
         x = self.layers(x)
         return x
 
@@ -148,7 +150,7 @@ class GeneratorResStack(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, d_con=4, layers=[2, 2, 3, 3], channels=[32, 64, 128, 256], downsample_rate=[4, 4, 4, 4]):
+    def __init__(self, d_con=4, layers=[2, 2, 2, 2], channels=[32, 64, 128, 256], downsample_rate=[4, 4, 4, 4]):
         super().__init__()
         self.input_conv = nn.Conv1d(1, channels[0], 7, 1, 3)
         self.output_conv = nn.Conv1d(channels[0], 1, 7, 1, 3)

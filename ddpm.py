@@ -73,7 +73,7 @@ class DDPM(nn.Module):
             for t, t_next in zip(reversed(steps), reversed(steps_next)):
                 t_tensor = torch.full((x_shape[0],), t, device=device)
                 e_theta = self.model(x=x, time=t_tensor, condition=condition)
-
+                
                 e = torch.randn(*x_shape, device=device)
                 sigma = eta * torch.sqrt((1 - alpha[t_next])/(1 - alpha[t])) * torch.sqrt(1 - alpha[t] / alpha[t_next])
                 x_t0 = (x - torch.sqrt(1 - alpha[t]) * e_theta) / torch.sqrt(alpha[t])
