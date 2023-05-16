@@ -40,7 +40,7 @@ class SpectrogramEncoder(nn.Module):
 
 
 class BottleneckEncoder(nn.Module):
-    def __init__(self, n_fft=256, num_layers=7, bottleneck=4, blur=8):
+    def __init__(self, n_fft=256, num_layers=7, bottleneck=4, blur=16):
         super().__init__()
         self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2, padding_mode='reflect')
         self.mid_layers = nn.Sequential(
@@ -146,9 +146,7 @@ class Vocoder(nn.Module):
         self.decoder_layers = nn.ModuleList([])
         self.mid_layers = GeneratorResStack(channels[-1], num_layers=4)
         
-        rate_total = 1
         for l, c, c_next, r, in zip(layers, channels, channels[1:]+[channels[-1]], downsample_rate):
-            rate_total = rate_total * r
             self.downsamples.append(nn.Conv1d(c, c_next, r * 2, r, r // 2))
             self.upsamples.insert(0, nn.ConvTranspose1d(c_next, c, r* 2, r, r // 2))
             self.encoder_layers.append(GeneratorResStack(c, num_layers=l))
