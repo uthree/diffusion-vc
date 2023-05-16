@@ -20,7 +20,7 @@ parser.add_argument('-d', '--device', default='cpu')
 parser.add_argument('-e', '--epoch', default=10000, type=int)
 parser.add_argument('-b', '--batch-size', default=64, type=int)
 parser.add_argument('-lr', '--learning-rate', default=1e-4, type=float)
-parser.add_argument('-len', '--length', default=32768, type=int)
+parser.add_argument('-len', '--length', default=65536, type=int)
 parser.add_argument('-m', '--max-data', default=-1, type=int)
 parser.add_argument('-fp16', default=False, type=bool)
 parser.add_argument('-gacc', '--gradient-accumulation', default=4, type=int)
@@ -54,7 +54,7 @@ dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size, shuffle=True)
 
 grad_acc = args.gradient_accumulation
 
-weight_kl = 0.02
+weight_kl = 0.0
 
 for epoch in range(args.epoch):
     tqdm.write(f"Epoch #{epoch}")
@@ -86,6 +86,9 @@ for epoch in range(args.epoch):
         if batch % 300 == 0:
             save_model(model)
             tqdm.write("Saved model!")
+
+        if epoch < 30:
+            weight_kl = 0.02
 
 
 

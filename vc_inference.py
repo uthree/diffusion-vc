@@ -10,6 +10,9 @@ from tqdm import tqdm
 
 from model import DiffusionVocoder, DiffusionVC
 
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
+
 parser = argparse.ArgumentParser(description="inference")
 
 parser.add_argument('-d', '--device', default='cpu')
@@ -21,6 +24,7 @@ parser.add_argument('-t', '--target-path', default='./target.wav')
 parser.add_argument('-ig', '--input-gain', default=1.0, type=float)
 parser.add_argument('-g', '--gain', default=1.0, type=float)
 parser.add_argument('-eta', '--eta', default=0, type=float)
+parser.add_argument('-ps', '--pitch-shift', default=0, type=int)
 
 args = parser.parse_args()
 
@@ -28,6 +32,8 @@ device = torch.device(args.device)
 
 vocoder = DiffusionVocoder().to(device)
 vc = DiffusionVC().to(device)
+
+ps = torchaudio.transforms.PitchShift(22050, args.pitch_shift).to(device) if args.pitch_shift != 0 else torch.nn.Identity()
 
 if os.path.exists('./vocoder.pt'):
     print("Loading Vocoder...")
@@ -55,6 +61,7 @@ for i, path in enumerate(paths):
         with torch.cuda.amp.autocast(enabled=args.fp16):
 
             wf = wf.to(device)
+            wf = ps(wf)
             wf = resample(wf, sr, 22050) * args.input_gain
             length = wf.shape[1] + (256 - wf.shape[1] % 256)
 
@@ -67,6 +74,11 @@ for i, path in enumerate(paths):
                     num_steps=args.convertor_steps,
                     eta=args.eta
                     )
+
+            plt.imshow(spec[0].cpu() + 1e-4)
+            plt.savefig(f"outputs/out_{i}_spectrogram.png", dpi=400)
+            plt.imshow(torch.log10(F.interpolate(content.unsqueeze(1).cpu().abs(), (128, content.shape[2]))[0, 0] + 1e-4))
+            plt.savefig(f"outputs/out_{i}_content.png", dpi=400)
 
             spec = vocoder.spectrogram_encoder(spec)
             wf = vocoder.vocoder.sample(
