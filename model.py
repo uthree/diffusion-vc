@@ -136,7 +136,7 @@ class GeneratorResStack(nn.Module):
 
 
 class Vocoder(nn.Module):
-    def __init__(self, layers=[2, 3, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[2, 2, 8, 8]):
+    def __init__(self, layers=[4, 4, 4, 4], channels=[32, 64, 128, 256], downsample_rate=[2, 2, 8, 8]):
         super().__init__()
         self.input_conv = nn.Conv1d(1, channels[0], 7, 1, 3, padding_mode='reflect')
         self.output_conv = nn.Conv1d(channels[0], 1, 7, 1, 3, padding_mode='reflect')
@@ -144,6 +144,7 @@ class Vocoder(nn.Module):
         self.upsamples = nn.ModuleList([])
         self.encoder_layers = nn.ModuleList([])
         self.decoder_layers = nn.ModuleList([])
+        self.mid_layers = GeneratorResStack(channels[-1], num_layers=4)
         
         rate_total = 1
         for l, c, c_next, r, in zip(layers, channels, channels[1:]+[channels[-1]], downsample_rate):
@@ -166,6 +167,7 @@ class Vocoder(nn.Module):
             skips.append(x)
             x = layer(x, time, condition)
             x = ds(x)
+        x = self.mid_layers(x, time, condition)
         for layer, us, s in zip(self.decoder_layers, self.upsamples, reversed(skips)):
             x = us(x)
             x = layer(x, time, condition)
