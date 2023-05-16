@@ -40,7 +40,7 @@ class SpectrogramEncoder(nn.Module):
 
 
 class BottleneckEncoder(nn.Module):
-    def __init__(self, n_fft=256, num_layers=7, bottleneck=4, blur=4):
+    def __init__(self, n_fft=256, num_layers=7, bottleneck=4, blur=8):
         super().__init__()
         self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
         self.mid_layers = nn.Sequential(
