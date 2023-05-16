@@ -31,7 +31,7 @@ class ResBlock(nn.Module):
 class SpectrogramEncoder(nn.Module):
     def __init__(self, n_fft=256, num_layers=4):
         super().__init__()
-        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2, padding_mode='reflect')
         self.mid_layers = nn.Sequential(
                 *[ResBlock(256, False) for _ in range(num_layers)])
 
@@ -42,7 +42,7 @@ class SpectrogramEncoder(nn.Module):
 class BottleneckEncoder(nn.Module):
     def __init__(self, n_fft=256, num_layers=7, bottleneck=4, blur=8):
         super().__init__()
-        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2, padding_mode='reflect')
         self.mid_layers = nn.Sequential(
                 *[ResBlock(256, False) for _ in range(num_layers)])
         self.bottleneck_layer = nn.Conv1d(256, bottleneck, 1, 1, 0)
@@ -60,7 +60,7 @@ class BottleneckEncoder(nn.Module):
 class SpeakerEncoder(nn.Module):
     def __init__(self, n_fft=256, num_layers=7, d_spk=128):
         super().__init__()
-        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2, padding_mode='reflect')
         self.mid_layers = nn.Sequential(
                 *[ResBlock(256, False) for _ in range(num_layers)])
         self.to_mean = nn.Conv1d(256, d_spk, 1, 1, 0, bias=False)
