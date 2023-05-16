@@ -53,6 +53,11 @@ wf = wf.to(device)
 spec = vc.to_spectrogram(wf)
 target_speaker, _ = vc.speaker_encoder(spec)
 
+spectrogram = torchaudio.transforms.Spectrogram(
+        n_fft=1024,
+        hop_length=64,
+        )
+
 paths = glob.glob(os.path.join(args.inputs, "*.wav"))
 for i, path in enumerate(paths):
     wf, sr = torchaudio.load(path)
@@ -75,8 +80,6 @@ for i, path in enumerate(paths):
                     eta=args.eta
                     )
 
-            plt.imshow(spec[0].cpu() + 1e-4)
-            plt.savefig(f"outputs/out_{i}_spectrogram.png", dpi=400)
             plt.imshow(torch.log10(F.interpolate(content.unsqueeze(1).cpu().abs(), (128, content.shape[2]))[0, 0] + 1e-4))
             plt.savefig(f"outputs/out_{i}_content.png", dpi=400)
 
@@ -88,7 +91,12 @@ for i, path in enumerate(paths):
                     num_steps=args.vocoder_steps,
                     eta=args.eta
                     )
+
             wf = resample(wf, 22050, sr) * args.gain
+            spec = torch.log10(spectrogram(wf.cpu()) + 1e-4)
+            plt.imshow(spec[0].cpu())
+            plt.savefig(f"outputs/out_{i}_spectrogram.png", dpi=400)
+
 
     wf = wf.to('cpu').detach()
     torchaudio.save(src=wf, sample_rate=sr, filepath=f"./outputs/out_{i}.wav")
