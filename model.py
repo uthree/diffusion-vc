@@ -39,6 +39,31 @@ class SpectrogramEncoder(nn.Module):
         return self.mid_layers(self.input_layer(x))
 
 
+class BottleneckEncoder(nn.Module):
+    def __init__(self, n_fft=256, num_layers=7, bottleneck=4):
+        super().__init__()
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
+        self.mid_layers = nn.Sequential(
+                *[ResBlock(256, False) for _ in range(num_layers)])
+        self.bottleneck_layer = nn.Conv1d(256, bottleneck, 1, 1, 0)
+
+    def forward(self, x):
+        return self.bottleneck_layer(self.mid_layers(self.input_layer(x)))
+
+
+class SpeakerEncoder(nn.Module):
+    def __init__(self, n_fft=256, num_layers=7, d_spk=128):
+        super().__init__()
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 5, 1, 2)
+        self.mid_layers = nn.Sequential(
+                *[ResBlock(256, False) for _ in range(num_layers)])
+        self.output_layer = nn.Conv1d(256, d_spk * 2, 1, 1, 0)
+
+    def forward(self, x):
+        out = self.output_layer(self.mid_layers(self.input_layer(x))).mean(dim=2, keepdim=True)
+        mean, logvar = out.chunk(2, dim=1)
+        return mean, logvar
+
 class ChannelNorm(nn.Module):
     def __init__(self, channels, eps=1e-4):
         super().__init__()
@@ -148,6 +173,55 @@ class DiffusionVocoder(nn.Module):
         super().__init__()
         self.vocoder = DDPM(Vocoder())
         self.spectrogram_encoder = SpectrogramEncoder()
+        self.to_spectrogram = torchaudio.transforms.Spectrogram(
+                n_fft=256
+                )
+
+
+class VCResBlock(nn.Module):
+    def __init__(self, channels=256, bottleneck=4, d_spk=128):
+        super().__init__()
+        self.norm = ChannelNorm(channels)
+        self.conv1 = nn.Conv1d(channels, channels, 5, 1, 2)
+        self.conv2 = nn.Conv1d(channels, channels, 5, 1, 2)
+        self.con_conv = nn.Conv1d(bottleneck, channels, 1, 1, 0)
+        self.spk_conv = nn.Conv1d(d_spk, channels, 1, 1, 0)
+        self.time_enc = TimeEncoding1d(channels)
+        self.act = nn.GELU()
+
+
+    def forward(self, x, t, con, spk):
+        res = x
+        x = self.norm(x) + self.con_conv(con) + self.spk_conv(spk)
+        x = self.time_enc(x, t)
+        x = self.conv1(x)
+        x = self.act(x)
+        x = self.conv2(x)
+        return res + x
+
+
+class VoiceConvertor(nn.Module):
+    def __init__(self, n_fft=256, bottleneck=4, d_spk=128, num_layers=8):
+        super().__init__()
+        self.input_layer = nn.Conv1d(n_fft // 2 + 1, 256, 1, 1, 0)
+        self.output_layer = nn.Conv1d(256, n_fft // 2 + 1, 1, 1, 0)
+        self.mid_layers = nn.ModuleList([VCResBlock(256, bottleneck, d_spk) for _ in range(num_layers)])
+
+    def forward(self, x, time, condition):
+        con, spk = condition
+        x = self.input_layer(x)
+        for layer in self.mid_layers:
+            x = layer(x, time, con, spk)
+        x = self.output_layer(x)
+        return x
+
+
+class DiffusionVC(nn.Module):
+    def __init__(self, n_fft=256, d_con=4, d_spk=128):
+        super().__init__()
+        self.content_encoder = BottleneckEncoder(n_fft=n_fft, bottleneck=d_con)
+        self.speaker_encoder = SpeakerEncoder(n_fft=n_fft, d_spk=d_spk)
+        self.generator = DDPM(VoiceConvertor(n_fft, d_con, d_spk, num_layers=8))
         self.to_spectrogram = torchaudio.transforms.Spectrogram(
                 n_fft=256
                 )

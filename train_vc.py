@@ -9,7 +9,7 @@ import torchaudio
 
 from tqdm import tqdm
 
-from model import DiffusionVocoder
+from model import DiffusionVC
 from dataset import WaveFileDirectory
 
 
@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description="run training")
 parser.add_argument('dataset')
 parser.add_argument('-d', '--device', default='cpu')
 parser.add_argument('-e', '--epoch', default=10000, type=int)
-parser.add_argument('-b', '--batch-size', default=8, type=int)
+parser.add_argument('-b', '--batch-size', default=64, type=int)
 parser.add_argument('-lr', '--learning-rate', default=1e-4, type=float)
 parser.add_argument('-len', '--length', default=32768, type=int)
 parser.add_argument('-m', '--max-data', default=-1, type=int)
@@ -30,13 +30,13 @@ args = parser.parse_args()
 device = torch.device(args.device)
 
 def load_or_init_model(device=torch.device('cpu')):
-    model = DiffusionVocoder().to(device)
-    if os.path.exists('./vocoder.pt'):
-        model.load_state_dict(torch.load('./vocoder.pt', map_location=device))
+    model = DiffusionVC().to(device)
+    if os.path.exists('./convertor.pt'):
+        model.load_state_dict(torch.load('./convertor.pt', map_location=device))
     return model
 
 def save_model(model):
-    torch.save(model.state_dict(), './vocoder.pt')
+    torch.save(model.state_dict(), './convertor.pt')
 
 scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
 
@@ -54,6 +54,8 @@ dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size, shuffle=True)
 
 grad_acc = args.gradient_accumulation
 
+weight_kl = 0.02
+
 for epoch in range(args.epoch):
     tqdm.write(f"Epoch #{epoch}")
     bar = tqdm(total=len(ds))
@@ -66,18 +68,24 @@ for epoch in range(args.epoch):
             optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=args.fp16):
             spec = model.to_spectrogram(wave)
-            spec = model.spectrogram_encoder(spec)
-            loss = model.vocoder.calculate_loss(wave, spec)
+            mean, logvar = model.speaker_encoder(spec)
+            speaker = mean + torch.exp(logvar) * torch.randn(*logvar.shape, device=logvar.device)
+            loss_kl = (-1 -logvar + torch.exp(logvar) + mean**2).mean()
+            content = model.content_encoder(spec)
+            loss_ddpm = model.generator.calculate_loss(spec, condition=(content, speaker))
+            loss = loss_ddpm + loss_kl * weight_kl
 
         scaler.scale(loss).backward()
         if batch % grad_acc == 0:
             scaler.step(optimizer)
             scaler.update()
         
-        bar.set_description(f"loss: {loss.item():.6f}")
+        bar.set_description(f"DDPM Loss: {loss.item():.6f}, KL: {loss_kl.item():.6f}")
         bar.update(N)
         
         if batch % 300 == 0:
             save_model(model)
             tqdm.write("Saved model!")
+
+
 
